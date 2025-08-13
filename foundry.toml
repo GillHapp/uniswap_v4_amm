@@ -1,0 +1,10 @@
+[profile.default]
+libs = ["lib"]
+out = "out"
+src = "src"
+
+remappings = [
+  "v4-core=lib/v4-core",
+]
+
+# See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
