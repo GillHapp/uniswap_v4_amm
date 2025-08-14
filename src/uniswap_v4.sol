@@ -82,7 +82,7 @@ contract uniswap_v4 {
         params[0] =
             abi.encode(localPoolKey, tickLower, tickUpper, liquidity, amount0Max, amount1Max, recipient, hookData);
         params[1] = abi.encode(currency0, currency1);
-        params[2] = abi.encode(Currency.wrap(address(0)), recipient);
+        params[2] = abi.encode(CurrencyLibrary.ADDRESS_ZERO, recipient);
         uint256 deadline = block.timestamp + 60;
 
         uint256 valueToPass = currency0.isAddressZero() ? amount0Max : 0;
@@ -90,7 +90,43 @@ contract uniswap_v4 {
         positionManager.modifyLiquidities{value: valueToPass}(abi.encode(actions, params), deadline);
     }
 
-    // Create parameters for each action
+    function increaseLiquidity(
+        uint256 tokenId,
+        uint256 liquidity,
+        uint128 amount0Max,
+        uint128 amount1Max,
+        bytes calldata hookData,
+        address currency0,
+        address currency1,
+        bool isEthPosition,
+        uint256 deadline
+    ) external payable {
+        // Step 1: Encode the actions
+        bytes memory actions = isEthPosition
+            ? abi.encodePacked(uint8(Actions.INCREASE_LIQUIDITY), uint8(Actions.SETTLE_PAIR), uint8(Actions.SWEEP))
+            : abi.encodePacked(uint8(Actions.INCREASE_LIQUIDITY), uint8(Actions.SETTLE_PAIR));
+
+        // Step 2: Encode parameters
+        uint256 paramCount = isEthPosition ? 3 : 2;
+        bytes[] memory params = new bytes[](paramCount);
+
+        // Required: increase parameters
+        params[0] = abi.encode(tokenId, liquidity, amount0Max, amount1Max, hookData);
+
+        // settle pair parameters
+        params[1] = abi.encode(Currency.wrap(currency0), Currency.wrap(currency1));
+
+        // sweep parameters (only if ETH involved)
+        if (isEthPosition) {
+            params[2] = abi.encode(CurrencyLibrary.ADDRESS_ZERO, msg.sender);
+        }
+
+        // Step 3: Define ETH value if needed
+        uint256 valueToSend = isEthPosition ? amount0Max : 0;
+
+        // Execute the transaction
+        positionManager.modifyLiquidities{value: valueToSend}(abi.encode(actions, params), deadline);
+    }
 
     // Allow contract to receive ETH
     receive() external payable {}
