@@ -178,6 +178,21 @@ contract uniswap_v4 {
         // For ETH pairs, valueToPass is almost always 0 when withdrawing
         positionManager.modifyLiquidities(abi.encode(actions, params), deadline);
     }
+
+    // collect fees from a position
+    function collectFees(uint256 tokenId, address recipient) external {
+        // Encode the actions for collecting fees
+        bytes memory actions = abi.encodePacked(uint8(Actions.DECREASE_LIQUIDITY), uint8(Actions.TAKE_PAIR));
+        bytes[] memory params = new bytes[](2);
+        /// @dev collecting fees is achieved with liquidity=0, the second parameter
+        params[0] = abi.encode(tokenId, 0, 0, 0, "");
+        params[1] = abi.encode(Currency.wrap(address(0)), Currency.wrap(address(myToken)), recipient);
+        uint256 deadline = block.timestamp + 60;
+        // Execute the transaction
+        positionManager.modifyLiquidities(abi.encode(actions, params), deadline);
+        console.log("Fees collected for tokenId: ", tokenId, " to recipient: ", recipient);
+    }
+
     // Allow contract to receive ETH
 
     receive() external payable {}
