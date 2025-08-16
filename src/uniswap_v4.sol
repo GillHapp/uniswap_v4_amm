@@ -11,6 +11,13 @@ import {IPositionManager} from "v4-periphery/src/interfaces/IPositionManager.sol
 import {Actions} from "v4-periphery/src/libraries/Actions.sol";
 import {console} from "forge-std/console.sol";
 import {Currency, CurrencyLibrary} from "v4-core/src/types/Currency.sol";
+import {UniversalRouter} from "uniswap/universal-router/contracts/UniversalRouter.sol";
+import {Commands} from "uniswap/universal-router/contracts/libraries/Commands.sol";
+import {IV4Router} from "v4-periphery/src/interfaces/IV4Router.sol";
+import {IPermit2} from "uniswap/permit2/src/interfaces/IPermit2.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
+
 // Attach CurrencyLibrary functions to Currency type
 
 contract uniswap_v4 {
@@ -19,9 +26,17 @@ contract uniswap_v4 {
     MyToken public myToken;
     IPoolManager public poolManager = IPoolManager(0xE03A1074c86CFeDd5C142C4F04F1a1536e203543);
     IPositionManager public positionManager = IPositionManager(0x429ba70129df741B2Ca2a85BC3A2a3328e5c09b4);
+    UniversalRouter public router = UniversalRouter(payable(0x3A9D48AB9751398BbFa63ad67599Bb04e4BdF98b));
+    IPermit2 public immutable permit2 = IPermit2(0x000000000022D473030F116dDEE9F6B43aC78BA3);
 
     // Store the pool key for later use
-    PoolKey public poolKey;
+    PoolKey internal key = PoolKey({
+        currency0: Currency.wrap(address(0)), // ETH
+        currency1: Currency.wrap(address(myToken)), // MyToken
+        fee: 500,
+        tickSpacing: 10,
+        hooks: IHooks(address(0))
+    });
 
     constructor(address _tokenAddress) {
         myToken = MyToken(_tokenAddress);
@@ -205,6 +220,77 @@ contract uniswap_v4 {
         // Execute the transaction
         positionManager.modifyLiquidities(abi.encode(actions, params), deadline);
         console.log("Position burned for tokenId: ", tokenId);
+    }
+
+    function approveTokenWithPermit2(address token, uint160 amount, uint48 expiration) external {
+        IERC20(token).approve(address(permit2), type(uint256).max);
+        permit2.approve(token, address(router), amount, expiration);
+    }
+
+    function swapExactInputSingle(
+        PoolKey calldata key, // PoolKey struct that identifies the v4 pool
+        uint128 amountIn, // Exact amount of tokens to swap
+        uint128 minAmountOut, // Minimum amount of output tokens expected
+        uint256 deadline // Timestamp after which the transaction will revert
+    ) external returns (uint256 amountOut) {
+        // Implementation will follow
+    }
+
+    function swapExactInputSingle(uint128 amountIn, uint128 minAmountOut, uint256 deadline)
+        external
+        payable
+        returns (uint256 amountOut)
+    {
+        address tokenIn = Currency.unwrap(key.currency0);
+        address tokenOut = Currency.unwrap(key.currency1);
+
+        if (tokenIn == address(0)) {
+            // Case 1: Native ETH as input
+            require(msg.value == amountIn, "Must send ETH equal to amountIn");
+        } else {
+            // Case 2: ERC20 input
+            IERC20(tokenIn).transferFrom(msg.sender, address(this), amountIn);
+            IERC20(tokenIn).approve(address(permit2), amountIn);
+            permit2.approve(tokenIn, address(router), amountIn, uint48(block.timestamp + 3600));
+        }
+
+        // Step 2: Encode the swap
+        bytes memory commands = abi.encodePacked(uint8(Commands.V4_SWAP));
+        // Encode V4Router actions
+        bytes memory actions =
+            abi.encodePacked(uint8(Actions.SWAP_EXACT_IN_SINGLE), uint8(Actions.SETTLE_ALL), uint8(Actions.TAKE_ALL));
+
+        bytes[] memory params = new bytes[](3);
+
+        // First parameter: swap configuration
+        params[0] = abi.encode(
+            IV4Router.ExactInputSingleParams({
+                poolKey: key,
+                zeroForOne: true, // true if we're swapping token0 for token1
+                amountIn: amountIn, // amount of tokens we're swapping
+                amountOutMinimum: minAmountOut, // minimum amount we expect to receive
+                hookData: bytes("") // no hook data needed
+            })
+        );
+
+        // Second parameter: specify input tokens for the swap
+        // encode SETTLE_ALL parameters
+        params[1] = abi.encode(key.currency0, amountIn);
+
+        // Third parameter: specify output tokens from the swap
+        params[2] = abi.encode(key.currency1, minAmountOut);
+
+        bytes[] memory inputs = new bytes[](1);
+
+        // Combine actions and params into inputs
+        inputs[0] = abi.encode(actions, params);
+
+        // Execute the swap
+        uint256 deadline = block.timestamp + 20;
+        router.execute(commands, inputs, deadline);
+        amountOut = key.currency1.balanceOf(address(this));
+        require(amountOut >= minAmountOut, "Insufficient output amount");
+        return amountOut;
     }
 
     // Allow contract to receive ETH
