@@ -128,6 +128,57 @@ contract uniswap_v4 {
         positionManager.modifyLiquidities{value: valueToSend}(abi.encode(actions, params), deadline);
     }
 
+    /**
+     * @notice Decrease liquidity from an existing position
+     * @param tokenId The position NFT ID
+     * @param liquidity Amount of liquidity to remove
+     * @param amount0Min Minimum amount of token0 to receive
+     * @param amount1Min Minimum amount of token1 to receive
+     * @param hookData Optional hook data
+     * @param currency0 Address of token0 (0x0 for ETH)
+     * @param currency1 Address of token1
+     * @param recipient Address to receive withdrawn tokens
+     * @param isDustTolerant If true, use CLEAR_OR_TAKE instead of TAKE_PAIR
+     */
+    function decreaseLiquidity(
+        uint256 tokenId,
+        uint256 liquidity,
+        uint128 amount0Min,
+        uint128 amount1Min,
+        bytes calldata hookData,
+        address currency0,
+        address currency1,
+        address recipient,
+        bool isDustTolerant
+    ) external {
+        bytes memory actions;
+        bytes[] memory params;
+
+        if (!isDustTolerant) {
+            // Case 1: Take both tokens normally
+            actions = abi.encodePacked(uint8(Actions.DECREASE_LIQUIDITY), uint8(Actions.TAKE_PAIR));
+
+            params = new bytes[](2);
+            params[0] = abi.encode(tokenId, liquidity, amount0Min, amount1Min, hookData);
+            params[1] = abi.encode(Currency.wrap(currency0), Currency.wrap(currency1), recipient);
+        } else {
+            // Case 2: Dust-tolerant mode (CLEAR_OR_TAKE for each token)
+            actions = abi.encodePacked(
+                uint8(Actions.DECREASE_LIQUIDITY), uint8(Actions.CLEAR_OR_TAKE), uint8(Actions.CLEAR_OR_TAKE)
+            );
+
+            params = new bytes[](3);
+            params[0] = abi.encode(tokenId, liquidity, amount0Min, amount1Min, hookData);
+            params[1] = abi.encode(Currency.wrap(currency0), amount0Min);
+            params[2] = abi.encode(Currency.wrap(currency1), amount1Min);
+        }
+
+        uint256 deadline = block.timestamp + 60;
+
+        // For ETH pairs, valueToPass is almost always 0 when withdrawing
+        positionManager.modifyLiquidities(abi.encode(actions, params), deadline);
+    }
     // Allow contract to receive ETH
+
     receive() external payable {}
 }
