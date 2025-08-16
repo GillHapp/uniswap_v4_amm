@@ -193,6 +193,20 @@ contract uniswap_v4 {
         console.log("Fees collected for tokenId: ", tokenId, " to recipient: ", recipient);
     }
 
+    // Burn Position
+    function burnPosition(uint256 tokenId, address recipient) external {
+        // Encode the actions for burning a position
+        bytes memory actions = abi.encodePacked(uint8(Actions.BURN_POSITION), uint8(Actions.TAKE_PAIR));
+
+        bytes[] memory params = new bytes[](2);
+        params[0] = abi.encode(tokenId, 0, 0, 0, "");
+        params[1] = abi.encode(Currency.wrap(address(0)), Currency.wrap(address(myToken)), recipient);
+        uint256 deadline = block.timestamp + 60;
+        // Execute the transaction
+        positionManager.modifyLiquidities(abi.encode(actions, params), deadline);
+        console.log("Position burned for tokenId: ", tokenId);
+    }
+
     // Allow contract to receive ETH
 
     receive() external payable {}
