@@ -2,21 +2,22 @@
 pragma solidity 0.8.26;
 
 import {MyToken} from "./myToken.sol";
-import {PoolKey} from "v4-core/src/types/PoolKey.sol";
-import {Currency} from "v4-core/src/types/Currency.sol";
-import {IHooks} from "v4-core/src/interfaces/IHooks.sol";
+import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
+import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
+import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
-import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
-import {IPositionManager} from "v4-periphery/src/interfaces/IPositionManager.sol";
-import {Actions} from "v4-periphery/src/libraries/Actions.sol";
+import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
+import {IPositionManager} from "@uniswap/v4-periphery/src/interfaces/IPositionManager.sol";
+import {Actions} from "@uniswap/v4-periphery/src/libraries/Actions.sol";
 import {console} from "forge-std/console.sol";
-import {Currency, CurrencyLibrary} from "v4-core/src/types/Currency.sol";
-import {UniversalRouter} from "uniswap/universal-router/contracts/UniversalRouter.sol";
-import {Commands} from "uniswap/universal-router/contracts/libraries/Commands.sol";
-import {IV4Router} from "v4-periphery/src/interfaces/IV4Router.sol";
-import {IPermit2} from "uniswap/permit2/src/interfaces/IPermit2.sol";
+import {Currency, CurrencyLibrary} from "@uniswap/v4-core/src/types/Currency.sol";
+import {UniversalRouter} from "@uniswap/universal-router/contracts/UniversalRouter.sol";
+import {Commands} from "@uniswap/universal-router/contracts/libraries/Commands.sol";
+import {IV4Router} from "@uniswap/v4-periphery/src/interfaces/IV4Router.sol";
+import {IPermit2} from "@uniswap/permit2/src/interfaces/IPermit2.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
+import {PoolIdLibrary, PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
 
 // Attach CurrencyLibrary functions to Currency type
 
@@ -33,8 +34,8 @@ contract uniswap_v4 {
     PoolKey internal key = PoolKey({
         currency0: Currency.wrap(address(0)), // ETH
         currency1: Currency.wrap(address(myToken)), // MyToken
-        fee: 500,
-        tickSpacing: 10,
+        fee: 3000,
+        tickSpacing: 60,
         hooks: IHooks(address(0))
     });
 
@@ -46,12 +47,12 @@ contract uniswap_v4 {
     /// @dev This function initializes a pool with a specific currency pair, fee, tick spacing, and hooks.
     /// It also sets the initial price of the pool based on the provided amounts
     /// info this is only create the pool and insitlise the pool with the starting price and at this point we are not using the hooks
-    function createPool() external {
-        poolKey = PoolKey({
-            currency0: Currency.wrap(address(0)), // ETH
+    function createPool() external returns (int24 poolTick, PoolId poolId) {
+        PoolKey memory key1 = PoolKey({
+            currency0: CurrencyLibrary.ADDRESS_ZERO, // ETH
             currency1: Currency.wrap(address(myToken)), // Your token
-            fee: 500,
-            tickSpacing: 10,
+            fee: 3000,
+            tickSpacing: 60,
             hooks: IHooks(address(0))
         });
 
@@ -60,10 +61,14 @@ contract uniswap_v4 {
         uint256 amount1 = 1000;
         uint160 startingPrice = encodeSqrtRatioX96(amount1, amount0);
 
-        int24 poolTick = poolManager.initialize(poolKey, startingPrice);
+        int24 initializedPoolTick = poolManager.initialize(key1, startingPrice);
+        // console poolId
+        PoolId poolId1 = PoolIdLibrary.toId(key1);
 
-        console.log("Token deployed at: ", address(myToken));
-        console.log("Pool tick is: ", poolTick);
+        console.log("Token erc20 at: ", address(myToken));
+        console.log("Pool tick is: ", initializedPoolTick);
+
+        return (initializedPoolTick, poolId1);
     }
 
     function encodeSqrtRatioX96(uint256 amount1, uint256 amount0) internal pure returns (uint160 sqrtPriceX96) {
@@ -84,7 +89,11 @@ contract uniswap_v4 {
         uint256 amount1Max,
         address recipient,
         bytes calldata hookData
-    ) external {
+    ) external payable {
+        // approve the position manager to spend MyToken
+        IERC20(address(myToken)).approve(address(permit2), type(uint256).max);
+        permit2.approve(address(myToken), address(positionManager), type(uint160).max, uint48(block.timestamp + 3600));
+
         // For ETH liquidity positions
         bytes memory actions =
             abi.encodePacked(uint8(Actions.MINT_POSITION), uint8(Actions.SETTLE_PAIR), uint8(Actions.SWEEP));
@@ -286,8 +295,8 @@ contract uniswap_v4 {
         inputs[0] = abi.encode(actions, params);
 
         // Execute the swap
-        uint256 deadline = block.timestamp + 20;
-        router.execute(commands, inputs, deadline);
+        uint256 swapDeadline = block.timestamp + 20;
+        router.execute(commands, inputs, swapDeadline);
         amountOut = key.currency1.balanceOf(address(this));
         require(amountOut >= minAmountOut, "Insufficient output amount");
         return amountOut;
