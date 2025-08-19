@@ -2,13 +2,17 @@
 libs = ["lib"]
 out = "out"
 src = "src"
+via_ir = true
 
 remappings = [
-  "v4-core=lib/v4-core",
-  "v4-core/=lib/v4-core/",
-  "v4-periphery=lib/v4-periphery",
-  "uniswap/permit2/=lib/permit2/",
-  "uniswap/universal-router/=lib/universal-router/",
+  "@uniswap/v4-core/=lib/v4-core",
+  "@uniswap/v4-periphery/=lib/v4-periphery",
+  "@uniswap/permit2/=lib/permit2/",
+  "@uniswap/universal-router/=lib/universal-router/",
+  "@uniswap/v2-core/=lib/v2-core/",
+  "@uniswap/v3-core/=lib/v3-core/",
 ]
+[rpc_endpoints]
+sepolia = "${SEPOLIA_RPC_URL}"
 
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
